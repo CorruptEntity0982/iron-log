@@ -3,7 +3,6 @@
 
   var LS = 'ironlog:';
   var $ = function (sel) { return document.querySelector(sel); };
-  var LB_TO_KG = 0.45359237;
 
   var PLATE_STACK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h1.2M20.8 12H22" stroke="currentColor" stroke-width="1.6"/><rect x="6" y="9.5" width="3" height="5" rx="0.6" fill="currentColor"/><rect x="15" y="9.5" width="3" height="5" rx="0.6" fill="currentColor"/><path d="M9 12h6" stroke="currentColor" stroke-width="1.6"/></svg>';
   var EMPTY_PLATE_SVG = '<svg class="plate-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" class="pm-body"></circle><circle cx="16" cy="16" r="14" class="pm-rim" fill="none"></circle><circle cx="16" cy="16" r="5.5" class="pm-brass" fill="none"></circle><circle cx="16" cy="16" r="3" class="pm-hole"></circle></svg>';
@@ -57,53 +56,6 @@
   function unitLabel() { return weightUnitLabel(); }
   function dateStamp() { return new Date().toISOString().slice(0, 10); }
   function normalizeWeightValue(value) { return Math.round(value * 10) / 10; }
-  function convertSetWeightsToKg(sets) {
-    if (!Array.isArray(sets)) return;
-    sets.forEach(function (set) {
-      if (set && typeof set.weight === 'number' && isFinite(set.weight)) {
-        set.weight = normalizeWeightValue(set.weight * LB_TO_KG);
-      }
-    });
-  }
-  function normalizeBackupWeightData(data) {
-    if (!data || typeof data !== 'object') return data;
-    if (data.unit && data.unit !== 'lb') return data;
-    if (data.version && data.unit === 'kg') return data;
-
-    if (Array.isArray(data.sessions)) {
-      data.sessions.forEach(function (session) {
-        if (!session || !Array.isArray(session.entries)) return;
-        session.entries.forEach(function (entry) {
-          convertSetWeightsToKg(entry.sets);
-        });
-      });
-    }
-    data.unit = 'kg';
-    return data;
-  }
-  function migrateLegacyWeightData() {
-    var savedSettings = safeParse(localStorage.getItem(LS + 'settings'), null);
-    var shouldConvert = false;
-
-    if (savedSettings && savedSettings.unit === 'lb') shouldConvert = true;
-    if (!savedSettings && !localStorage.getItem(LS + 'weightsMigratedToKg')) shouldConvert = true;
-    if (!shouldConvert) return false;
-
-    state.sessions.forEach(function (session) {
-      if (!session || !Array.isArray(session.entries)) return;
-      session.entries.forEach(function (entry) {
-        convertSetWeightsToKg(entry.sets);
-      });
-    });
-
-    if (savedSettings && savedSettings.unit === 'lb') {
-      savedSettings.unit = 'kg';
-      localStorage.setItem(LS + 'settings', JSON.stringify(savedSettings));
-    }
-
-    localStorage.setItem(LS + 'weightsMigratedToKg', '1');
-    return true;
-  }
 
   function emptyStateHtml(title, sub) {
     return '<div class="empty-state">' + EMPTY_PLATE_SVG + '<p style="font-weight:600;color:var(--text-dim)">' + escapeHtml(title) + '</p><p>' + escapeHtml(sub) + '</p></div>';
@@ -164,10 +116,6 @@
     state.settings = savedSettings || { unit: 'kg', weightStep: 2.5 };
     state.settings.unit = 'kg';
     state.settings.weightStep = 2.5;
-
-    if (migrateLegacyWeightData()) {
-      persistSessions();
-    }
     persistSettings();
 
     if (savedExercises === null && savedTemplates === null) {
@@ -970,7 +918,6 @@
       if (!data || !Array.isArray(data.exercises) || !Array.isArray(data.templates) || !Array.isArray(data.sessions)) {
         toast("That doesn't look like an Iron Log backup"); return;
       }
-      normalizeBackupWeightData(data);
       openDialog('Import Backup?', "This replaces all current data on this device with the backup file. This can't be undone.", [
         { label: 'Cancel', style: 'secondary' },
         { label: 'Import', style: 'danger', onClick: function () {
