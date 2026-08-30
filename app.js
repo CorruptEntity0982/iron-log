@@ -53,7 +53,8 @@
     return new Date(ms).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   }
   function formatVolume(v) { return Math.round(v).toLocaleString(); }
-  function unitLabel() { return state.settings.unit; }
+  function weightUnitLabel() { return 'kg'; }
+  function unitLabel() { return weightUnitLabel(); }
   function dateStamp() { return new Date().toISOString().slice(0, 10); }
   function normalizeWeightValue(value) { return Math.round(value * 10) / 10; }
   function convertSetWeightsToKg(sets) {
@@ -162,6 +163,7 @@
     state.activeSessionId = safeParse(localStorage.getItem(LS + 'activeSessionId'), null);
     state.settings = savedSettings || { unit: 'kg', weightStep: 2.5 };
     state.settings.unit = 'kg';
+    state.settings.weightStep = 2.5;
 
     if (migrateLegacyWeightData()) {
       persistSessions();
@@ -308,16 +310,17 @@
   }
   function prevLine(entry) {
     var prev = getPreviousTopSet(entry.exerciseId);
-    return prev ? ('Last ' + prev.weight + ' ' + unitLabel() + ' × ' + prev.reps) : '';
+    return prev ? ('Last ' + prev.weight + ' ' + weightUnitLabel() + ' × ' + prev.reps) : '';
   }
 
   function renderSetRow(exIdx, set, si) {
+    var weightSuffix = weightUnitLabel();
     return '<div class="set-row' + (set.done ? ' done' : '') + '" id="set-row-' + exIdx + '-' + si + '">' +
       '<button class="set-idx" data-action="remove-set" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '">' + (si + 1) + '</button>' +
       '<div class="stepper">' +
         '<button data-action="dec" data-field="weight" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '">−</button>' +
         '<input type="number" inputmode="decimal" data-role="num-input" data-field="weight" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '" value="' + (set.weight || '') + '" placeholder="0">' +
-        '<span class="stepper-suffix">kg</span>' +
+        '<span class="stepper-suffix">' + weightSuffix + '</span>' +
         '<button data-action="inc" data-field="weight" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '">+</button>' +
       '</div>' +
       '<div class="stepper">' +

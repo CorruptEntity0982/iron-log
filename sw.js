@@ -1,4 +1,4 @@
-const CACHE_NAME = 'iron-log-v1';
+const CACHE_NAME = 'iron-log-v2';
 const SCOPE_URL = new URL(self.registration.scope);
 const APP_SHELL = [
   '',
