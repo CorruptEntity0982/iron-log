@@ -13,7 +13,7 @@
     templates: [],
     sessions: [],
     activeSessionId: null,
-    settings: { unit: 'lb', weightStep: 5 },
+    settings: { unit: 'kg', weightStep: 2.5 },
     ui: { currentView: 'log', historyTab: 'sessions', exercisesTab: 'exercises' }
   };
 
@@ -76,6 +76,21 @@
       }
     }
     return null;
+  }
+
+  function getPreviousSets(exerciseId) {
+    var sessions = state.sessions.filter(function (s) { return s.finishedAt; }).sort(function (a, b) { return b.startedAt - a.startedAt; });
+    for (var i = 0; i < sessions.length; i++) {
+      var entry = sessions[i].entries.find(function (e) { return e.exerciseId === exerciseId; });
+      if (!entry) continue;
+      var sets = entry.sets.filter(function (s) { return s.weight > 0 || s.reps > 0; });
+      if (sets.length) return sets.map(function (s) { return { weight: s.weight, reps: s.reps }; });
+    }
+    return [];
+  }
+  function previousSetFor(prevSets, idx) {
+    if (!prevSets.length) return { weight: 0, reps: 0 };
+    return prevSets[idx] || prevSets[prevSets.length - 1];
   }
 
   function estimateTemplateMinutes(t) {
@@ -326,6 +341,7 @@
   }
   function beepOnce(delay) {
     setTimeout(function () {
+      primeAudio();
       if (!audioCtx) return;
       try {
         var o = audioCtx.createOscillator(), g = audioCtx.createGain();
@@ -333,15 +349,15 @@
         o.connect(g); g.connect(audioCtx.destination);
         var t = audioCtx.currentTime;
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-        o.start(t); o.stop(t + 0.3);
+        g.gain.exponentialRampToValueAtTime(0.5, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+        o.start(t); o.stop(t + 0.36);
       } catch (e) {}
     }, delay);
   }
   function beep() {
-    beepOnce(0); beepOnce(320);
-    if ('vibrate' in navigator) { try { navigator.vibrate([120, 60, 120]); } catch (e) {} }
+    beepOnce(0); beepOnce(380); beepOnce(760);
+    if ('vibrate' in navigator) { try { navigator.vibrate([150, 80, 150, 80, 150]); } catch (e) {} }
   }
 
   function startRest(seconds) {
@@ -387,9 +403,12 @@
     var t = getTemplate(tplId);
     if (!t) return;
     var entries = t.exercises.map(function (te) {
-      var prev = getPreviousTopSet(te.exerciseId);
+      var prevSets = getPreviousSets(te.exerciseId);
       var sets = [];
-      for (var i = 0; i < te.targetSets; i++) sets.push({ weight: prev ? prev.weight : 0, reps: 0, done: false });
+      for (var i = 0; i < te.targetSets; i++) {
+        var src = previousSetFor(prevSets, i);
+        sets.push({ weight: src.weight || 0, reps: src.reps || 0, done: false });
+      }
       return { exerciseId: te.exerciseId, name: te.name, muscles: te.muscles || [], repMin: te.repMin, repMax: te.repMax, restSec: te.restSec, sets: sets };
     });
     var session = { id: uid('ses'), templateId: t.id, templateName: t.name, startedAt: Date.now(), finishedAt: null, entries: entries };
@@ -408,12 +427,16 @@
   function addExerciseToSession(ex) {
     var session = getActiveSession();
     if (!session) return;
-    var prev = getPreviousTopSet(ex.id);
-    var w = prev ? prev.weight : 0;
+    var prevSets = getPreviousSets(ex.id);
+    var sets = [];
+    for (var i = 0; i < 3; i++) {
+      var src = previousSetFor(prevSets, i);
+      sets.push({ weight: src.weight || 0, reps: src.reps || 0, done: false });
+    }
     session.entries.push({
       exerciseId: ex.id, name: ex.name, muscles: (ex.muscles || []).slice(),
       repMin: null, repMax: null, restSec: null,
-      sets: [{ weight: w, reps: 0, done: false }, { weight: w, reps: 0, done: false }, { weight: w, reps: 0, done: false }]
+      sets: sets
     });
     persistSessions();
     refreshSessionExercises();
@@ -422,7 +445,7 @@
     var session = getActiveSession();
     var entry = session.entries[exIdx];
     var last = entry.sets[entry.sets.length - 1];
-    entry.sets.push({ weight: last ? last.weight : 0, reps: 0, done: false });
+    entry.sets.push({ weight: last ? last.weight : 0, reps: last ? last.reps : 0, done: false });
     persistSessions();
     refreshExerciseCard(exIdx);
   }
