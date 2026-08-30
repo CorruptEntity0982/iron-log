@@ -336,6 +336,14 @@ h1, h2, h3 { margin: 0; font-family: var(--display); font-weight: 400; letter-sp
 }
 .stepper input::-webkit-outer-spin-button,
 .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper-suffix {
+  padding: 0 10px 0 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 .set-check {
   width: 34px;

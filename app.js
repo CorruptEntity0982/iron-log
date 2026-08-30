@@ -3,6 +3,7 @@
 
   var LS = 'ironlog:';
   var $ = function (sel) { return document.querySelector(sel); };
+  var LB_TO_KG = 0.45359237;
 
   var PLATE_STACK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h1.2M20.8 12H22" stroke="currentColor" stroke-width="1.6"/><rect x="6" y="9.5" width="3" height="5" rx="0.6" fill="currentColor"/><rect x="15" y="9.5" width="3" height="5" rx="0.6" fill="currentColor"/><path d="M9 12h6" stroke="currentColor" stroke-width="1.6"/></svg>';
   var EMPTY_PLATE_SVG = '<svg class="plate-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" class="pm-body"></circle><circle cx="16" cy="16" r="14" class="pm-rim" fill="none"></circle><circle cx="16" cy="16" r="5.5" class="pm-brass" fill="none"></circle><circle cx="16" cy="16" r="3" class="pm-hole"></circle></svg>';
@@ -54,6 +55,54 @@
   function formatVolume(v) { return Math.round(v).toLocaleString(); }
   function unitLabel() { return state.settings.unit; }
   function dateStamp() { return new Date().toISOString().slice(0, 10); }
+  function normalizeWeightValue(value) { return Math.round(value * 10) / 10; }
+  function convertSetWeightsToKg(sets) {
+    if (!Array.isArray(sets)) return;
+    sets.forEach(function (set) {
+      if (set && typeof set.weight === 'number' && isFinite(set.weight)) {
+        set.weight = normalizeWeightValue(set.weight * LB_TO_KG);
+      }
+    });
+  }
+  function normalizeBackupWeightData(data) {
+    if (!data || typeof data !== 'object') return data;
+    if (data.unit && data.unit !== 'lb') return data;
+    if (data.version && data.unit === 'kg') return data;
+
+    if (Array.isArray(data.sessions)) {
+      data.sessions.forEach(function (session) {
+        if (!session || !Array.isArray(session.entries)) return;
+        session.entries.forEach(function (entry) {
+          convertSetWeightsToKg(entry.sets);
+        });
+      });
+    }
+    data.unit = 'kg';
+    return data;
+  }
+  function migrateLegacyWeightData() {
+    var savedSettings = safeParse(localStorage.getItem(LS + 'settings'), null);
+    var shouldConvert = false;
+
+    if (savedSettings && savedSettings.unit === 'lb') shouldConvert = true;
+    if (!savedSettings && !localStorage.getItem(LS + 'weightsMigratedToKg')) shouldConvert = true;
+    if (!shouldConvert) return false;
+
+    state.sessions.forEach(function (session) {
+      if (!session || !Array.isArray(session.entries)) return;
+      session.entries.forEach(function (entry) {
+        convertSetWeightsToKg(entry.sets);
+      });
+    });
+
+    if (savedSettings && savedSettings.unit === 'lb') {
+      savedSettings.unit = 'kg';
+      localStorage.setItem(LS + 'settings', JSON.stringify(savedSettings));
+    }
+
+    localStorage.setItem(LS + 'weightsMigratedToKg', '1');
+    return true;
+  }
 
   function emptyStateHtml(title, sub) {
     return '<div class="empty-state">' + EMPTY_PLATE_SVG + '<p style="font-weight:600;color:var(--text-dim)">' + escapeHtml(title) + '</p><p>' + escapeHtml(sub) + '</p></div>';
@@ -103,12 +152,21 @@
   function persistTemplates() { localStorage.setItem(LS + 'templates', JSON.stringify(state.templates)); }
   function persistSessions() { localStorage.setItem(LS + 'sessions', JSON.stringify(state.sessions)); }
   function persistUiState() { localStorage.setItem(LS + 'activeSessionId', JSON.stringify(state.activeSessionId)); }
+  function persistSettings() { localStorage.setItem(LS + 'settings', JSON.stringify(state.settings)); }
 
   function loadState() {
+    var savedSettings = safeParse(localStorage.getItem(LS + 'settings'), null);
     var savedExercises = safeParse(localStorage.getItem(LS + 'exercises'), null);
     var savedTemplates = safeParse(localStorage.getItem(LS + 'templates'), null);
     state.sessions = safeParse(localStorage.getItem(LS + 'sessions'), []) || [];
     state.activeSessionId = safeParse(localStorage.getItem(LS + 'activeSessionId'), null);
+    state.settings = savedSettings || { unit: 'kg', weightStep: 2.5 };
+    state.settings.unit = 'kg';
+
+    if (migrateLegacyWeightData()) {
+      persistSessions();
+    }
+    persistSettings();
 
     if (savedExercises === null && savedTemplates === null) {
       var seed = buildSeedData();
@@ -259,11 +317,13 @@
       '<div class="stepper">' +
         '<button data-action="dec" data-field="weight" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '">−</button>' +
         '<input type="number" inputmode="decimal" data-role="num-input" data-field="weight" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '" value="' + (set.weight || '') + '" placeholder="0">' +
+        '<span class="stepper-suffix">kg</span>' +
         '<button data-action="inc" data-field="weight" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '">+</button>' +
       '</div>' +
       '<div class="stepper">' +
         '<button data-action="dec" data-field="reps" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '">−</button>' +
         '<input type="number" inputmode="numeric" data-role="num-input" data-field="reps" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '" value="' + (set.reps || '') + '" placeholder="0">' +
+        '<span class="stepper-suffix">reps</span>' +
         '<button data-action="inc" data-field="reps" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '">+</button>' +
       '</div>' +
       '<button class="set-check" data-action="toggle-done" data-ex-idx="' + exIdx + '" data-set-idx="' + si + '">' + CHECK_SVG + '</button>' +
@@ -889,7 +949,7 @@
     openSheet(html);
   }
   function exportData() {
-    var data = { exportedAt: Date.now(), exercises: state.exercises, templates: state.templates, sessions: state.sessions };
+    var data = { exportedAt: Date.now(), version: 2, unit: state.settings.unit, exercises: state.exercises, templates: state.templates, sessions: state.sessions };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -907,6 +967,7 @@
       if (!data || !Array.isArray(data.exercises) || !Array.isArray(data.templates) || !Array.isArray(data.sessions)) {
         toast("That doesn't look like an Iron Log backup"); return;
       }
+      normalizeBackupWeightData(data);
       openDialog('Import Backup?', "This replaces all current data on this device with the backup file. This can't be undone.", [
         { label: 'Cancel', style: 'secondary' },
         { label: 'Import', style: 'danger', onClick: function () {
